@@ -1,3 +1,12 @@
+/**
+ * Name: Chopra Raunak
+ * UID: 3035663514
+ * Course: COMP3230 - Operating Systems
+ *
+ * Assignment 1 - Linux Shell
+ *
+ */
+
 #include <sys/types.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -19,7 +28,7 @@ int should_wait = 1; // flag to determine if process should run in the backgroun
  *
  * @param fileName the file to redirect from
  */
-void redirectIn(char *fileName)
+void pipeIn(char *fileName)
 {
     int in = open(fileName, O_RDONLY);
     dup2(in, 0);
@@ -31,14 +40,14 @@ void redirectIn(char *fileName)
  *
  * @param fileName the file to redirect to
  */
-void redirectOut(char *fileName)
+void pipeOut(char *fileName)
 {
     int out = open(fileName, O_WRONLY | O_TRUNC | O_CREAT, 0600);
     dup2(out, 1);
     close(out);
 }
 
-int getArgsLength(char **args)
+int retArgsLenght(char **args)
 {
     int i = 0;
     while (args[i] != NULL)
@@ -54,7 +63,7 @@ void timeXHandler(char **args)
     int arr = getArgsLength(args);
     if (arr == 0)
     {
-        printf("timeX cannot be a standalone command");
+        printf("\"timeX\" cannot be a standalone command");
     }
     else
     {
@@ -66,7 +75,7 @@ void timeXHandler(char **args)
             if (status_process == -1)
             {
                 printf(args[0]);
-                printf(" No Such File or Directory");
+                printf(": No Such file or directory");
                 // handleError();
             }
         }
@@ -77,7 +86,7 @@ void timeXHandler(char **args)
             struct rusage rusage;
             int ret = wait4(pid, &status, 0, &rusage);
 
-            printf("(PID) %d, (CMD) %s, (user) %.6f, (sys) %.6f\n",
+            printf("(PID)%d  (CMD)%s   (user)%.3f s  (sys)%.3f s",
                    pid,
                    args[0],
                    rusage.ru_utime.tv_sec + rusage.ru_utime.tv_usec / 1000000.0,
@@ -113,12 +122,11 @@ void run(char *args[])
         else if (pid == 0)
         { /* child process */
 
-            printf("%s", args[0]);
             int status = execvp(args[0], args);
             if (status == -1)
             {
-                printf(args[0]);
-                printf(" No Such File or Directory");
+                printf("'%s'", args[0]);
+                printf(": No Such File or Directory");
             }
         }
         else
@@ -166,7 +174,7 @@ void exitHandler(char *args)
     if (arg_count > 1)
     {
         // not a valid case
-        printf("No other arguments are allowed with exit.");
+        printf("\"exit\" with other arguments!!!");
     }
     else if (arg_count == 1)
     {
@@ -175,7 +183,7 @@ void exitHandler(char *args)
         int status;
         struct rusage rusage;
         int ret = wait4(pid, &status, 0, &rusage);
-        printf("Terminated!");
+        printf("Terminated!\n");
         exit(1);
     }
 }
