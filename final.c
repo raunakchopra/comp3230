@@ -1,3 +1,4 @@
+
 /**
  * Name: Chopra Raunak
  * UID: 3035663514
@@ -20,43 +21,7 @@
 #include <signal.h>
 #include <sys/resource.h>
 
-int should_run = 1;  // flag to determine when to exit program
-int should_wait = 1; // flag to determine if process should run in the background
-
-/**
- * Redirects stdin from a file.
- *
- * @param fileName the file to redirect from
- */
-void pipeIn(char *fileName)
-{
-    int in = open(fileName, O_RDONLY);
-    dup2(in, 0);
-    close(in);
-}
-
-/**
- * Redirects stdout to a file.
- *
- * @param fileName the file to redirect to
- */
-void pipeOut(char *fileName)
-{
-    int out = open(fileName, O_WRONLY | O_TRUNC | O_CREAT, 0600);
-    dup2(out, 1);
-    close(out);
-}
-
-int retArgsLength(char **args)
-{
-    int i = 0;
-    while (args[i] != NULL)
-    {
-        i++;
-    }
-    return i;
-}
-
+// Function to Handle TimeX Command
 void timeXHandler(char **args)
 {
 
@@ -76,7 +41,6 @@ void timeXHandler(char **args)
             {
                 printf(args[0]);
                 printf(": No Such file or directory");
-                // handleError();
             }
         }
         else
@@ -86,28 +50,83 @@ void timeXHandler(char **args)
             struct rusage rusage;
             int ret = wait4(pid, &status, 0, &rusage);
 
-            printf("(PID)%d  (CMD)%s   (user)%.3f s  (sys)%.3f s",
-                   pid,
-                   args[0],
-                   rusage.ru_utime.tv_sec + rusage.ru_utime.tv_usec / 1000000.0,
-                   rusage.ru_stime.tv_sec + rusage.ru_stime.tv_usec / 1000000.0);
+            printf("(PID)%d  (CMD)%s   (user)%.3f s  (sys)%.3f s", pid, args[0], rusage.ru_utime.tv_sec + rusage.ru_utime.tv_usec / 1000000.0, rusage.ru_stime.tv_sec + rusage.ru_stime.tv_usec / 1000000.0);
         }
     }
-    return;
+    return 0;
 }
 
-/**
- * Runs a command.
- *
- * @param *args[] the args to run
- */
-void run(char *args[])
+// To Handle the Exit Command
+void exitHandler(char *args)
 {
+    int arg_count = retArgsLength(args);
+    if (arg_count > 1)
+    {
+        // not a valid case
+        printf("\"exit\" with other arguments!!!");
+    }
+    else if (arg_count == 1)
+    {
+        // valid case
+        pid_t pid = getpid();
+        int status;
+        struct rusage rusage;
+        int ret = wait4(pid, &status, 0, &rusage);
+        printf("Terminated!\n");
+        exit(1);
+    }
+}
+
+// To Handle the SIGNINT Signal
+void sigint_handler(int signum)
+{
+    printf(" Receives SIGINT!! IGNORE IT :)");
+    printf("\n$$ 3230shell ##  ");
+    fflush(stdout);
+}
+
+// To obtain stdin from a file
+void pipeIn(char *file)
+{
+    int file_in = open(file, O_RDONLY);
+    dup2(file_in, 0);
+    close(file_in);
+}
+
+// To store stdout in a file from pipe.
+void pipeOut(char *file)
+{
+    int file_out = open(file, O_WRONLY | O_TRUNC | O_CREAT, 0600);
+    dup2(file_out, 1);
+    close(file_out);
+}
+
+// Function to Return the length of the arguments for a command
+int retArgsLength(char **args)
+{
+    int i = 0;
+    while (args[i] != NULL)
+    {
+        i++;
+    }
+    return i;
+}
+
+int wait_check = 1; // flag to determine if process should run in the background
+
+// To Execute a command
+void execute(char *args[])
+{
+
+    char fileName[] = "/dev/tty";
     pid_t pid;
+
+    // TimeX Command Handler
     if (strcmp(args[0], "timeX") == 0)
     {
         timeXHandler(args + 1);
     }
+    // Exit Command Handler
     else if (strcmp(args[0], "exit") == 0)
     {
         exitHandler(args);
@@ -130,118 +149,59 @@ void run(char *args[])
             }
         }
         else
-        { /* parent process */
-            if (should_wait)
+        {
+            if (wait_check)
             {
                 waitpid(pid, NULL, 0);
             }
             else
             {
-                should_wait = 0;
+                wait_check = 0;
             }
         }
-        pipeIn("/dev/tty");
-        pipeOut("/dev/tty");
-    }
-
-}
-
-/**
- * Creates a pipe.
- *
- * @param args [description]
- */
-;
-void createPipe(char *args[])
-{
-    int fd[2];
-    pipe(fd);
-
-    dup2(fd[1], 1);
-    close(fd[1]);
-
-    printf("args = %s\n", *args);
-
-    run(args);
-
-    dup2(fd[0], 0);
-    close(fd[0]);
-}
-
-void exitHandler(char *args)
-{
-    int arg_count = retArgsLength(args);
-    if (arg_count > 1)
-    {
-        // not a valid case
-        printf("\"exit\" with other arguments!!!");
-    }
-    else if (arg_count == 1)
-    {
-        // valid case
-        pid_t pid = getpid();
-        int status;
-        struct rusage rusage;
-        int ret = wait4(pid, &status, 0, &rusage);
-        printf("Terminated!\n");
-        exit(1);
+        pipeIn(fileName);
+        pipeOut(fileName);
     }
 }
 
-/**
- * Creates a tokenized form of the input with spaces to separate words.
- *
- * @param  *input the input string
- * @return tokenized the tokenized stirng
- */
-char *tokenize(char *input)
+// Converts input command to tokens to handle
+char *tokenize(char *command)
 {
-    int i;
     int j = 0;
-    char *tokenized = (char *)malloc((1024 * 2) * sizeof(char));
+    char *tokenized = (char *)malloc((2048) * sizeof(char));
 
-    // add spaces around special characters
-    for (i = 0; i < strlen(input); i++)
+    int i = 0;
+    int len_cmd = strlen(command);
+    while (i < strlen(command))
     {
-        if (input[i] != '>' && input[i] != '<' && input[i] != '|')
+        if (command[i] == '|' && command[i] == '<' && command[i] == '>')
         {
-            tokenized[j++] = input[i];
+            tokenized[j] = ' ';
+            j++;
+            tokenized[j] = command[i];
+            j++;
+            tokenized[j] = ' ';
+            j++;
         }
         else
         {
-            tokenized[j++] = ' ';
-            tokenized[j++] = input[i];
-            tokenized[j++] = ' ';
+            tokenized[j] = command[i];
+            j++;
         }
+        i++;
     }
     tokenized[j++] = '\0';
 
-    // add null to the end
-    char *end;
-    end = tokenized + strlen(tokenized) - 1;
-    end--;
-    *(end + 1) = '\0';
+    char *endChar = tokenized + strlen(tokenized) - 1;
+    --endChar;
+    *(endChar + 1) = '\0';
 
     return tokenized;
 }
 
-void sigint_handler(int signum)
-{
-    printf(" Receives SIGINT!! IGNORE IT :)");
-    printf("\n$$ 3230shell ##  ");
-    fflush(stdout);
-    // use default signal handler
-    // signal(signum, SIG_DFL);
-}
-
-/**
- * Runs a basic shell.
- *
- * @return 0 upon completion
- */
+// Main Function
 int main(void)
 {
-
     signal(SIGINT, sigint_handler);
     char *args[1024]; // command line arguments
 
@@ -250,10 +210,9 @@ int main(void)
         printf("\n$$ 3230shell ## ");
         fflush(stdout);
 
-        char input[1024];
-        fgets(input, 1024, stdin);
-        char *tokens;
-        tokens = tokenize(input);
+        char command[1024], *tokens;
+        fgets(command, 1024, stdin);
+        tokens = tokenize(command);
 
         char *arg = strtok(tokens, " ");
         int i = 0;
@@ -270,7 +229,14 @@ int main(void)
             else if (*arg == '|')
             {
                 args[i] = NULL;
-                createPipe(args);
+                int fileDescriptor[2];
+                pipe(fileDescriptor);
+                dup2(fileDescriptor[1], 1);
+                close(fileDescriptor[1]);
+                printf("args = %s\n", *args);
+                execute(args);
+                dup2(fileDescriptor[0], 0);
+                close(fileDescriptor[0]);
                 i = 0;
             }
             else
@@ -281,8 +247,7 @@ int main(void)
             arg = strtok(NULL, " ");
         }
         args[i] = NULL;
-
-        run(args);
+        execute(args);
     }
     return 0;
 }
