@@ -170,7 +170,7 @@ void createPipe(char *args[])
 
 void exitHandler(char *args)
 {
-    int arg_count = getArgsLength(args);
+    int arg_count = retArgsLenght(args);
     if (arg_count > 1)
     {
         // not a valid case
