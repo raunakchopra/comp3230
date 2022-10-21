@@ -140,8 +140,8 @@ void run(char *args[])
                 should_wait = 0;
             }
         }
-        redirectIn("/dev/tty");
-        redirectOut("/dev/tty");
+        pipeIn("/dev/tty");
+        pipeOut("/dev/tty");
     }
 
 }
@@ -261,11 +261,11 @@ int main(void)
         {
             if (*arg == '<')
             {
-                redirectIn(strtok(NULL, " "));
+                pipeIn(strtok(NULL, " "));
             }
             else if (*arg == '>')
             {
-                redirectOut(strtok(NULL, " "));
+                pipeOut(strtok(NULL, " "));
             }
             else if (*arg == '|')
             {
