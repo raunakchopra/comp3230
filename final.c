@@ -47,7 +47,7 @@ void pipeOut(char *fileName)
     close(out);
 }
 
-int retArgsLenght(char **args)
+int retArgsLength(char **args)
 {
     int i = 0;
     while (args[i] != NULL)
@@ -60,7 +60,7 @@ int retArgsLenght(char **args)
 void timeXHandler(char **args)
 {
 
-    int arr = getArgsLength(args);
+    int arr = retArgsLength(args);
     if (arr == 0)
     {
         printf("\"timeX\" cannot be a standalone command");
@@ -170,7 +170,7 @@ void createPipe(char *args[])
 
 void exitHandler(char *args)
 {
-    int arg_count = retArgsLenght(args);
+    int arg_count = retArgsLength(args);
     if (arg_count > 1)
     {
         // not a valid case
