@@ -1,253 +1,384 @@
+/*
+# Filename: psort.c
+# Student name and No.: Chopra Raunak
+# Development platform:  Ubutntu VS Code
+# Remark: Completed all parts
+*/
 
-/**
- * Name: Chopra Raunak
- * UID: 3035663514
- * Course: COMP3230 - Operating Systems
- *
- * Assignment 1 - Linux Shell
- *
- */
-
-#include <sys/types.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <string.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <ctype.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <sys/resource.h>
+#include <pthread.h>
+#include <math.h>
+#include <errno.h>
+#include <sys/time.h>
 
-// Function to Handle TimeX Command
-void timeXHandler(char **args)
+int checking(unsigned int *, long);
+int compare(const void *, const void *);
+
+// Global Variables
+
+long size;            // size of the array
+int total_threads;    // total number of worker threads
+unsigned int *intarr; // main array
+
+unsigned int *sample_arr;       // array to store samples from worker thread
+long sample_arr_itr = 0;        // iterator variable to to iterate over sample_arr
+unsigned int *pivot_values_arr; // array to store and handle the calculated pivot values
+unsigned int *thread_partition; // array to store and handle partiton of each thread
+unsigned int *final_arr;        // array to store final output
+long final_arr_itr = 0;         // iterator variable to iterate over final_arr
+unsigned int *thread_size;      // to store the elements size of each thread
+
+// Synchronization Variables - Locks and associated conditional variables
+pthread_mutex_t main_worker_mutex = PTHREAD_MUTEX_INITIALIZER; // mutex lock to switch between threads
+pthread_cond_t thread_scheduler = PTHREAD_COND_INITIALIZER;    // conditional variable to handle different phases of the program
+int thread_id_check = 0;                                       // to handle the  worker threads and main thread
+int thread_var = 0;                                            // to manage the program execution between phases
+
+void *routine(void *id)
 {
+    unsigned int *thread_arr; // to store and manage thread subsequence
 
-    int arr = retArgsLength(args);
-    if (arr == 0)
+    int *thread_id = (int *)id;
+    double range_thread_arr = (double)size / (double)total_threads;
+
+    long subsequence_head = range_thread_arr * (*thread_id);
+    long subsequence_tail = range_thread_arr * (*thread_id + 1) - 1;
+    long size_thread_arr = subsequence_tail - subsequence_head + 1;
+
+    thread_size[*thread_id] = size_thread_arr;
+
+    thread_arr = (unsigned int *)malloc(size_thread_arr * sizeof(unsigned int));
+
+    long itr = subsequence_head;
+
+    pthread_mutex_lock(&main_worker_mutex);
+
+    // Crerating and storing a subsequence from intarr
+
+    long intarr_itr = 0;
+    while (intarr_itr < size_thread_arr)
     {
-        printf("\"timeX\" cannot be a standalone command");
-    }
-    else
-    {
-        pid_t pid = fork();
-        if (pid == 0)
+        if (itr <= subsequence_tail)
         {
-            // child process
-            int status_process = execvp(args[0], args);
-            if (status_process == -1)
+            thread_arr[intarr_itr++] = intarr[itr++];
+        }
+    }
+
+    itr = subsequence_head;
+
+    // Sorting the extracted subsequence
+
+    qsort(thread_arr, size_thread_arr, sizeof(unsigned int), compare);
+
+    // Rearranging intarr with sorted subsequences from each thread
+
+    long thread_itr = 0;
+    while (thread_itr < size_thread_arr)
+    {
+        if (itr <= subsequence_tail)
+        {
+            intarr[itr++] = thread_arr[thread_itr++];
+        }
+    }
+
+    // Synchronization Processto put a thread on wait
+
+    while (thread_id_check != *thread_id)
+    {
+        pthread_cond_wait(&thread_scheduler, &main_worker_mutex);
+    }
+
+    // Extracting p samples from each worker thread and stroing it in sample_arr
+
+    for (int p = 0; p < total_threads; p++)
+    {
+        sample_arr[sample_arr_itr++] = thread_arr[p * size / (total_threads * total_threads)];
+    }
+
+    // End of Phase 1
+
+    // Broadcasting signal
+    pthread_cond_broadcast(&thread_scheduler);
+
+    thread_id_check++;
+
+    pthread_mutex_unlock(&main_worker_mutex);
+
+    pthread_mutex_lock(&main_worker_mutex);
+
+    // Start of Phase 3
+
+    while (thread_id_check != total_threads + 1)
+    {
+        pthread_cond_wait(&thread_scheduler, &main_worker_mutex);
+    }
+
+    // Ensuring that Phase 1 is complete
+
+    while (thread_var != *thread_id)
+    {
+        pthread_cond_wait(&thread_scheduler, &main_worker_mutex);
+    }
+
+    // Phase 3 variables
+
+    int partition = 0;       // to store the number of partition
+    long partition_size = 0; // to store the size of partion
+    long partition_itr = 0;
+    long level = 0;
+
+    partition = *thread_id;
+
+    // Identifying the size of each partition
+
+    for (int i = 0; i < total_threads; i++)
+    {
+        long x;
+        long y;
+
+        if (i == 0)
+        {
+            x = 0;
+            y = thread_size[i];
+        }
+        else if (i > 0)
+        {
+            x = level;
+            y = level + thread_size[i];
+        }
+
+        for (long counter = x; counter < y; counter++)
+        {
+            if (partition == 0)
             {
-                printf(args[0]);
-                printf(": No Such file or directory");
+                if (intarr[counter] <= pivot_values_arr[partition])
+                {
+                    partition_size++;
+                }
             }
-        }
-        else
-        {
-            // parent process
-            int status;
-            struct rusage rusage;
-            int ret = wait4(pid, &status, 0, &rusage);
-
-            printf("(PID)%d  (CMD)%s   (user)%.3f s  (sys)%.3f s", pid, args[0], rusage.ru_utime.tv_sec + rusage.ru_utime.tv_usec / 1000000.0, rusage.ru_stime.tv_sec + rusage.ru_stime.tv_usec / 1000000.0);
-        }
-    }
-    return 0;
-}
-
-// To Handle the Exit Command
-void exitHandler(char *args)
-{
-    int arg_count = retArgsLength(args);
-    if (arg_count > 1)
-    {
-        // not a valid case
-        printf("\"exit\" with other arguments!!!");
-    }
-    else if (arg_count == 1)
-    {
-        // valid case
-        pid_t pid = getpid();
-        int status;
-        struct rusage rusage;
-        int ret = wait4(pid, &status, 0, &rusage);
-        printf("Terminated!\n");
-        exit(1);
-    }
-}
-
-// To Handle the SIGNINT Signal
-void sigint_handler(int signum)
-{
-    printf(" Receives SIGINT!! IGNORE IT :)");
-    printf("\n$$ 3230shell ##  ");
-    fflush(stdout);
-}
-
-// To obtain stdin from a file
-void pipeIn(char *file)
-{
-    int file_in = open(file, O_RDONLY);
-    dup2(file_in, 0);
-    close(file_in);
-}
-
-// To store stdout in a file from pipe.
-void pipeOut(char *file)
-{
-    int file_out = open(file, O_WRONLY | O_TRUNC | O_CREAT, 0600);
-    dup2(file_out, 1);
-    close(file_out);
-}
-
-// Function to Return the length of the arguments for a command
-int retArgsLength(char **args)
-{
-    int i = 0;
-    while (args[i] != NULL)
-    {
-        i++;
-    }
-    return i;
-}
-
-int wait_check = 1; // flag to determine if process should run in the background
-
-// To Execute a command
-void execute(char *args[])
-{
-
-    char fileName[] = "/dev/tty";
-    pid_t pid;
-
-    // TimeX Command Handler
-    if (strcmp(args[0], "timeX") == 0)
-    {
-        timeXHandler(args + 1);
-    }
-    // Exit Command Handler
-    else if (strcmp(args[0], "exit") == 0)
-    {
-        exitHandler(args);
-    }
-    else
-    {
-        pid = fork();
-        if (pid < 0)
-        {
-            fprintf(stderr, "Fork Failed");
-        }
-        else if (pid == 0)
-        { /* child process */
-
-            int status = execvp(args[0], args);
-            if (status == -1)
+            else if (partition == total_threads - 1)
             {
-                printf("'%s'", args[0]);
-                printf(": No Such File or Directory");
-            }
-        }
-        else
-        {
-            if (wait_check)
-            {
-                waitpid(pid, NULL, 0);
+                if (pivot_values_arr[partition - 1] < intarr[counter])
+                {
+                    partition_size++;
+                }
             }
             else
             {
-                wait_check = 0;
+                if (intarr[counter] > pivot_values_arr[partition - 1] && intarr[counter] <= pivot_values_arr[partition])
+                {
+                    partition_size++;
+                }
             }
         }
-        pipeIn(fileName);
-        pipeOut(fileName);
+        level = level + thread_size[i];
     }
-}
 
-// Converts input command to tokens to handle
-char *tokenize(char *command)
-{
-    int j = 0;
-    char *tokenized = (char *)malloc((2048) * sizeof(char));
+    // Creating a an array to store and handle partition
 
-    int i = 0;
-    int len_cmd = strlen(command);
-    while (i < strlen(command))
+    thread_partition = (unsigned int *)malloc((partition_size) * sizeof(unsigned int));
+
+    level = 0;
+
+    // Adding Elements to the array created above
+
+    for (int i = 0; i < total_threads; i++)
     {
-        if (command[i] == '|' && command[i] == '<' && command[i] == '>')
+        long x;
+        long y;
+
+        if (i == 0)
         {
-            tokenized[j] = ' ';
-            j++;
-            tokenized[j] = command[i];
-            j++;
-            tokenized[j] = ' ';
-            j++;
+            x = 0;
+            y = thread_size[i];
         }
-        else
+        else if (i > 0)
         {
-            tokenized[j] = command[i];
-            j++;
+            x = level;
+            y = level + thread_size[i];
         }
-        i++;
-    }
-    tokenized[j++] = '\0';
 
-    char *endChar = tokenized + strlen(tokenized) - 1;
-    --endChar;
-    *(endChar + 1) = '\0';
-
-    return tokenized;
-}
-
-// Main Function
-int main(void)
-{
-    signal(SIGINT, sigint_handler);
-    char *args[1024]; // command line arguments
-
-    while (1)
-    {
-        printf("\n$$ 3230shell ## ");
-        fflush(stdout);
-
-        char command[1024], *tokens;
-        fgets(command, 1024, stdin);
-        tokens = tokenize(command);
-
-        char *arg = strtok(tokens, " ");
-        int i = 0;
-        while (arg)
+        for (long counter = x; counter < y; counter++)
         {
-            if (*arg == '<')
+            if (partition == 0)
             {
-                pipeIn(strtok(NULL, " "));
+                if (intarr[counter] <= pivot_values_arr[partition])
+                {
+                    *(thread_partition + partition_itr++) = intarr[counter];
+                }
             }
-            else if (*arg == '>')
+            else if (partition == total_threads - 1)
             {
-                pipeOut(strtok(NULL, " "));
-            }
-            else if (*arg == '|')
-            {
-                args[i] = NULL;
-                int fileDescriptor[2];
-                pipe(fileDescriptor);
-                dup2(fileDescriptor[1], 1);
-                close(fileDescriptor[1]);
-                printf("args = %s\n", *args);
-                execute(args);
-                dup2(fileDescriptor[0], 0);
-                close(fileDescriptor[0]);
-                i = 0;
+                if (intarr[counter] > pivot_values_arr[partition - 1])
+                {
+                    *(thread_partition + partition_itr++) = intarr[counter];
+                }
             }
             else
             {
-                args[i] = arg;
-                i++;
+                if (intarr[counter] > pivot_values_arr[partition - 1] && intarr[counter] <= pivot_values_arr[partition])
+                {
+                    *(thread_partition + partition_itr++) = intarr[counter];
+                }
             }
-            arg = strtok(NULL, " ");
         }
-        args[i] = NULL;
-        execute(args);
+        level = level + thread_size[i];
     }
+
+    // Sorting the partition
+    qsort(thread_partition, partition_size, sizeof(unsigned int), compare);
+
+    // Adding the partitions generated to a new array
+
+    long i = 0;
+    while (i < partition_size)
+    {
+        final_arr[final_arr_itr++] = thread_partition[i++];
+    }
+
+    pthread_cond_broadcast(&thread_scheduler);
+
+    thread_var++;
+
+    pthread_mutex_unlock(&main_worker_mutex);
+}
+
+int main(int argc, char **argv)
+{
+    long i, j;
+    struct timeval start, end;
+
+    if (argc < 2)
+    {
+        printf("Usage: seq_sort <number>\n");
+        exit(0);
+    }
+
+    else if (argc == 3)
+    {
+        if (atol(argv[2]) <= 1)
+        {
+            printf("Number of threads can be lesser or equat to 1!");
+            exit(0);
+        }
+        total_threads = atol(argv[2]);
+    }
+
+    else
+    {
+        total_threads = 4;
+    }
+
+    int thread_ids[total_threads];
+    pthread_t threads[total_threads];
+
+    int id = 0;
+    while (id < total_threads)
+    {
+        thread_ids[id] = id;
+        id++;
+    }
+
+    size = atol(argv[1]);
+    intarr = (unsigned int *)malloc(size * sizeof(unsigned int));
+    if (intarr == NULL)
+    {
+        perror("malloc");
+        exit(0);
+    }
+
+    // set the random seed for generating a fixed random
+    // sequence across different runs
+    char *env = getenv("RANNUM"); // get the env variable
+    if (!env)                     // if not exists
+        srandom(3230);
+    else
+        srandom(atol(env));
+
+    for (i = 0; i < size; i++)
+    {
+        intarr[i] = random();
+    }
+
+    // measure the start time
+    gettimeofday(&start, NULL);
+
+    // Allocating the memory for sample array, pivot_values_arr, and others
+
+    sample_arr = (unsigned int *)malloc((total_threads * total_threads) * sizeof(unsigned int));
+    final_arr = (unsigned int *)malloc(size * sizeof(unsigned int));
+    thread_size = (unsigned int *)malloc(total_threads * sizeof(unsigned int));
+
+    // Creating worker threads
+
+    for (int thread_num = 0; thread_num < total_threads; thread_num++)
+    {
+        pthread_create(&threads[thread_num], NULL, routine, (void *)&thread_ids[thread_num]);
+    }
+
+    pthread_mutex_lock(&main_worker_mutex);
+
+    while (thread_id_check != total_threads)
+    {
+        pthread_cond_wait(&thread_scheduler, &main_worker_mutex);
+    }
+
+    // Start of Phase 2
+
+    qsort(sample_arr, total_threads * total_threads, sizeof(unsigned int), compare);
+
+    // Identifying Pivot values and storing them in pivot_values_arr
+    pivot_values_arr = (unsigned int *)malloc((total_threads - 1) * sizeof(unsigned int));
+    for (int p = 0; p < total_threads - 1; p++)
+    {
+        pivot_values_arr[p] = sample_arr[(p + 1) * total_threads + (total_threads / 2) - 1];
+    }
+
+    // End of Phase 2
+
+    thread_id_check++;
+
+    pthread_cond_broadcast(&thread_scheduler);
+
+    pthread_mutex_unlock(&main_worker_mutex);
+
+    for (int i = 0; i < total_threads; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    // // measure the end time
+    gettimeofday(&end, NULL);
+
+    if (!checking(final_arr, size))
+    {
+        printf("The array is not in sorted order!!\n");
+    }
+
+    printf("Total elapsed time: %.4f s\n", (end.tv_sec - start.tv_sec) * 1.0 + (end.tv_usec - start.tv_usec) / 1000000.0);
     return 0;
+}
+
+int compare(const void *a, const void *b)
+{
+    return (*(unsigned int *)a > *(unsigned int *)b) ? 1 : ((*(unsigned int *)a == *(unsigned int *)b) ? 0 : -1);
+}
+
+int checking(unsigned int *list, long size)
+{
+    long i;
+    printf("First : %d\n", list[0]);
+    printf("At 25%%: %d\n", list[size / 4]);
+    printf("At 50%%: %d\n", list[size / 2]);
+    printf("At 75%%: %d\n", list[3 * size / 4]);
+    printf("Last  : %d\n", list[size - 1]);
+    for (i = 0; i < size - 1; i++)
+    {
+        if (list[i] > list[i + 1])
+        {
+            return 0;
+        }
+    }
+    return 1;
 }
